@@ -1,0 +1,181 @@
+---
+title: "ProjekAkhir"
+author: "Kelompok_DS_069_106_115"
+date: "2024-12-02"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### Analisis Tingkat Kerusakan Akibat Kebakaran Hutan Menggunakan Algoritma K-Means Clustering
+
+### Library
+
+```{r}
+library(dslabs)
+library(tidyverse)
+library(tidymodels)
+library(here)
+
+library(cluster)
+library(factoextra)
+```
+
+### Data Preparation
+
+## Memilah kolom
+```{r}
+dataset = read.csv(here("AK_CA_Burned_Plot_Data_1983_2016.csv"))
+clean_data = dataset %>% 
+  select(burn_depth, prop_sol_combusted, total_c_combusted, ag_biomass_combusted,
+         residual_sol_c, mean_residual_org_layer_depth, initial_spread_index)
+colnames(clean_data) = c("kedalaman_pembakaran", "proporsi_lapisan_organik_terbakar",
+                         "karbon_terbakar", "biomassa_terbakar", "karbon_residu_tanah",
+                         "kedalaman_rata_rata_lapisan_residu","tingkat_penyebaran_api")
+View(dataset)
+head(clean_data)
+```
+
+## Menghapus nilai NA
+
+```{r}
+clean_data[clean_data == -9999] = NA
+
+clean_data = na.omit(clean_data)
+
+View(clean_data)
+head(clean_data)
+```
+
+## Scalling / Normalisasi data
+
+```{r}
+clean_data_scaled = clean_data %>% scale()
+head(clean_data_scaled)
+```
+
+### Modeling 
+
+
+## Menentukan nilai K optimal
+```{r}
+wss = sapply(1:5, function(k){
+  set.seed(98)
+  kmeans(clean_data_scaled,
+         centers = k,
+         nstart = 5)$tot.withinss
+  })
+elbow_data=data.frame(
+  k=1:5,
+  wss=wss
+  )
+ggplot(
+  elbow_data,
+  aes(
+    x=k,
+    y=wss
+    )
+  ) + geom_line() + geom_point() + labs(
+    x = "Jumlah Cluster (Jumlah Cluster Paling Optimal = 2)",
+    y = "Total Whithin- Cluster Sum of Squares(WSS)"
+  ) + theme_classic()
+```
+
+```{r}
+silhouette_scores <- numeric()
+for (k in 2:10) {
+  kmeans_result <- kmeans(clean_data, centers = k, nstart = 25)
+  sil <- silhouette(kmeans_result$cluster, dist(clean_data))
+  silhouette_scores[k] <- mean(sil[, 3])
+}
+
+plot(2:10, silhouette_scores[2:10], type = "b", pch = 19, frame = FALSE,
+     xlab = "Jumlah Cluster (Jumlah Cluster Paling Optimal = 2)", 
+     ylab = "Average Silhouette Score",
+     main = "Silhouette Method for Optimal k")
+```
+
+
+## K-Means
+
+```{r}
+set.seed(123)
+kmeans_result= kmeans(
+  clean_data_scaled,
+  centers=2,
+  nstart=25
+)
+
+clean_data$cluster= as.factor(kmeans_result$cluster)
+tail(clean_data)
+```
+
+## Visualisasi Data
+
+```{r}
+ggplot(
+  clean_data,
+  aes(
+    x = tingkat_penyebaran_api,
+    y = kedalaman_pembakaran,
+    color = cluster
+    )
+  ) + geom_point() + labs(
+    title = "Kluster kerusakan akibat kebakaran hutan",
+    x="Tingkat Penyebaran Api",
+    y="Kedalaman Pembakaran"
+ ) + theme_minimal()
+
+
+ggplot(
+  clean_data,
+  aes(
+    x = biomassa_terbakar,
+    y = proporsi_lapisan_organik_terbakar,
+    color = cluster
+    )
+  ) + geom_point() + labs(
+    title = "Kluster kerusakan akibat kebakaran hutan",
+    x="Jummlah Biomassa Terbakar",
+    y="Proporsi Lapisan Organik yang Tebakar"
+ ) + theme_minimal()
+
+
+ggplot(
+  clean_data,
+  aes(
+    x = karbon_residu_tanah,
+    y = kedalaman_rata_rata_lapisan_residu,
+    color = cluster
+    )
+  ) + geom_point() + labs(
+    title = "Kluster kerusakan akibat kebakaran hutan",
+    x="Karbon Residu Tanah",
+    y="Kedalaman rata-rata Lapisan Residu"
+ ) + theme_minimal()
+
+
+fviz_cluster(kmeans_result, data = clean_data_scaled) + theme_void()
+```
+
+```{r}
+cluster_summary = clean_data %>%
+  select(kedalaman_pembakaran, proporsi_lapisan_organik_terbakar,
+         karbon_terbakar, biomassa_terbakar, karbon_residu_tanah,
+         kedalaman_rata_rata_lapisan_residu,tingkat_penyebaran_api, cluster) %>%
+  group_by(cluster) %>%
+  summarise(
+    kedalaman_pembakaran = mean(kedalaman_pembakaran),
+    karbon_residu_tanah = mean(karbon_residu_tanah),
+    kedalaman_lapisan_residu = mean(kedalaman_rata_rata_lapisan_residu),
+    tingkat_penyebaran_api = mean(tingkat_penyebaran_api),
+    proporsi_lapisan_organik_terbakar = mean(proporsi_lapisan_organik_terbakar),
+    karbon_terbakar = mean(karbon_terbakar),
+    biomassa_terbakar = mean(biomassa_terbakar) 
+  )
+
+cluster_summary
+```
+
